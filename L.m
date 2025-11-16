@@ -113,7 +113,7 @@ startTask();
         cyclesCompleted = cyclesCompleted + 1;
         saveMousePathAndTrueCoordinates(mousePath, cyclesCompleted, totalTime, 1);
         successCount = successCount + 1;
-        showBlackPanelScreenSync(0.5);
+        showBlackPanelScreenSync(3);
         if successCount >= goalSuccesses
             stop(timerObj); delete(timerObj); close(fig);  return;
         end
@@ -129,7 +129,7 @@ startTask();
         totalTime = getTotalTime();
         cyclesCompleted = cyclesCompleted + 1;
         saveMousePathAndTrueCoordinates(mousePath, cyclesCompleted, totalTime, 2);
-        showBlackPanelScreenSync(0.5);
+        showBlackPanelScreenSync(3);
         if successCount >= goalSuccesses
             stop(timerObj); delete(timerObj); close(fig); return;
         end
