@@ -657,7 +657,7 @@ startTask();
     end
 
     function checkTimeout()
-        if ~centerActivated && targetActivated...
+        if ~centerActivated && targetActivated && ...
            (trialMode == 1 || (trialMode == 2 && THIS_SIDE == 1) || (trialMode == 3 && THIS_SIDE == 2))
             if toc(cycleStartTime) > 8
                 handleTimeout();
