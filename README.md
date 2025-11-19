@@ -112,7 +112,7 @@ Each file contains a matrix with columns:
 
 ```text
 [x, y, t]
-
+```
 ## Patch: L2 / R2 scripts (updated unimanual holding logic)
 
 A small patch has been added in the updated `L2.m` and `R2.m` scripts:
