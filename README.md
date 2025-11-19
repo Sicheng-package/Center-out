@@ -112,3 +112,21 @@ Each file contains a matrix with columns:
 
 ```text
 [x, y, t]
+
+## Patch: L2 / R2 scripts (updated unimanual holding logic)
+
+A small patch has been added in the updated `L2.m` and `R2.m` scripts:
+
+1. **New helper function(s) for the holding stage**  
+   The holding-stage logic has been refactored into dedicated helper function(s) to make the code easier to read and to keep the state machine for center/target hold checks in one place.
+
+2. **Unimanual holding rule updated**
+
+   - In **unimanual trials (UNI-L / UNI-R)**, **only the active hand** is required to acquire and hold the center / target for the specified `centerHoldDuration` and `targetHoldDuration`.  
+   - The **inactive hand** is no longer required to perform a full hold in the center/target. Instead, it must simply remain **relatively still**:
+     - Its cursor displacement must stay **below a “no-move” / holding threshold**.
+     - If the inactive hand shows a clear movement exceeding this threshold, the trial is treated as a **failure** (just like a break of hold in the active hand).
+
+   This update makes unimanual tasks less constrained for the non-moving hand while still enforcing that the “inactive” limb does not make large movements during the hold period.
+
+
