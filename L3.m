@@ -30,7 +30,6 @@ addoutput(daqSession,"Dev3","port0/line0:4","Digital");
 addinput(daqSession,"Dev3","port1/line3","Digital");
 
 startTask();
-
     function tcpObj = initNetwork(serverFlag)
         if serverFlag
             tcpObj = [];
@@ -139,7 +138,6 @@ startTask();
         FIRSTMOVE_FRAMES = 5;
         maxCycles       = 999;
         cyclesCompleted = 0;
-
         angles = linspace(0,2*pi,9);
         angles = angles(1:end-1);
         targetCenters = zeros(8,2);
@@ -196,10 +194,6 @@ startTask();
         showBlackPanelScreenSync(20);
         drawCircles();
         setInvisibleCursor();
-        
-        mouseDot = plot(ax, 0, 0, 'r.', 'MarkerSize', 100); 
-        uistack(mouseDot, 'top');
-
         resetMouseAndDotPositionToCenter();
         showTargetCircles(0);
         cycleStartTime = tic;
@@ -215,7 +209,6 @@ startTask();
         y = max(-0.5,min(0.5,y));
         if isvalid(mouseDot)
             set(mouseDot,'XData',x,'YData',y);
-            uistack(mouseDot, 'top');
         end
     end
 
@@ -782,4 +775,5 @@ startTask();
         writematrix(trialData,summaryFile,'WriteMode','append');
         recordData = trialData;
     end
+
 end
