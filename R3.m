@@ -144,7 +144,6 @@ startTask();
         end
         SCHEDULE_PATTERN = BASE_PATTERN(randperm(numel(BASE_PATTERN)));
         scheduleStep = 1;
-
         targetSequence   = [7 3 1 5];
         remainingTargets = targetSequence;
         radii           = 0.25;
@@ -188,7 +187,6 @@ startTask();
         remainingBI   = targetSequence(:)';
         remainingUniL = targetSequence(randperm(numel(targetSequence)));
         remainingUniR = targetSequence(randperm(numel(targetSequence)));
-
         angles = linspace(0,2*pi,9);
         angles = angles(1:end-1);
         targetCenters = zeros(8,2);
@@ -225,8 +223,6 @@ startTask();
         showBlackPanelScreenSync(20);
         drawCircles();
         setInvisibleCursor();
-        mouseDot = plot(ax, 0, 0, 'r.', 'MarkerSize', 100); 
-        uistack(mouseDot, 'top'); 
         resetMouseAndDotPositionToCenter();
         showTargetCircles(0);
         cycleStartTime = tic;
@@ -349,7 +345,6 @@ startTask();
         y = max(-0.5,min(0.5,y));
         if isvalid(mouseDot)
             set(mouseDot,'XData',x,'YData',y);
-            uistack(mouseDot, 'top');
         end
     end
 
@@ -928,4 +923,5 @@ startTask();
         writematrix(trialData,summaryFile,'WriteMode','append');
         recordData = trialData;
     end
+
 end
