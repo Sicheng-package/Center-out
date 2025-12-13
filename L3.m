@@ -485,7 +485,6 @@ startTask();
                     end
 
                 case 4
-                    % ===== 补丁2：op=4 做 trialIndex 校验，避免延迟包影响新trial =====
                     rTrial = double(typecast(uint8(payload(1:2)),'uint16'));
                     if rTrial ~= trialIndex
                         continue;
@@ -797,3 +796,4 @@ startTask();
         recordData = trialData;
     end
 end
+
