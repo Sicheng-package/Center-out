@@ -1,0 +1,799 @@
+function L3()
+global targetCenters targetSequence circleDiameter circleDiameter2 radii;
+global centerHoldDuration centerEnterTime hoverEnterTime targetHoldDuration centerActivated;
+global firstMove FIRSTMOVE_DELTA FIRSTMOVE_FRAMES centerExitPos resetPosition targetReachedOnce;
+global targetActivated currentTarget rxbuf;
+global cyclesCompleted maxCycles mousePath timerObj;
+global cycleStartTime lastMoveTime;
+global mouseDot ax fig screenSize barrierRemoteReady barrierRemoteDone barrierLocalReady barrierLocalDone;
+global tcpObj isServer ttlStartDiff ttlEndDiff;
+global daqSession centerexittime localCenterDone remoteCenterDone trialIndex;
+global localSuccess remoteSuccess failInProgress ttlFirstMove ttlEnd remoteTtlFirst remoteTtlEnd;
+global goalSuccesses successCount;
+global trialMode;
+global remainingTargets;
+global passiveOverlay THIS_SIDE;
+global remoteCenterIdx lastCenterSent;
+
+goalSuccesses = 360;
+successCount  = 0;
+isServer      = false;
+THIS_SIDE     = 1;
+CONTRA_MOVE_THRESH   = 0.04;
+CONTRA_FRAMES_THRESH = 5;
+failStatus           = 2;
+TOUCH_ACTIVE_LEVEL = 1;   
+TOUCH_FRAMES       = 5;  
+touchStable = 0;         
+touchHiCnt  = 0;
+touchLoCnt  = 0;
+
+tcpObj     = initNetwork(isServer);
+rxbuf      = uint8([]);
+screenSize = get(groot,'ScreenSize');
+
+daqSession = daq("ni");
+addoutput(daqSession,"Dev3","port0/line0:4","Digital");
+addinput(daqSession,"Dev3","port1/line3","Digital");
+write(daqSession,[1 1 0 0 0]);
+
+startTask();
+
+    function cleanup()
+        if ~isempty(timerObj), stop(timerObj); delete(timerObj); end
+        if ~isempty(daqSession)
+            write(daqSession,[1 1 0 0 0]);
+            delete(daqSession);
+        end
+        if ~isempty(tcpObj), delete(tcpObj); end
+        if isvalid(fig), delete(fig); end
+    end
+
+    function tcpObj = initNetwork(serverFlag)
+        if serverFlag
+            tcpObj = [];
+        else
+            serverIP   = "192.168.0.10";
+            serverPort = 30000;
+            tcpObj = tcpclient(serverIP,serverPort,"Timeout",30);
+        end
+    end
+
+    function sendSignal(obj,val)
+        write(obj,uint8(val),'uint8');
+    end
+
+    function ok = safeWrite(obj,data,dtype)
+        ok = true;
+        write(obj,data,dtype);
+    end
+
+    function pumpBarrierBytes()
+        if isempty(tcpObj), return; end
+        n = tcpObj.NumBytesAvailable;
+        if n <= 0, return; end
+        bytes = read(tcpObj,n,'uint8');
+        other = uint8([]);
+        for k = 1:numel(bytes)
+            b = bytes(k);
+            if b == 10
+                barrierRemoteReady = true;
+            elseif b == 11
+                barrierRemoteDone  = true;
+            else
+                other(end+1,1) = b;
+            end
+        end
+        if ~isempty(other)
+            rxbuf = [rxbuf; other];
+        end
+    end
+
+    function showBlackPanelScreenSync(duration)
+        barrierRemoteReady = false;
+        barrierRemoteDone  = false;
+        barrierLocalReady  = false;
+        barrierLocalDone   = false;
+        safeWrite(tcpObj,uint8(10),'uint8');
+        barrierLocalReady = true;
+
+        tWait = tic;
+        while ~barrierRemoteReady
+            pumpBarrierBytes();
+            if toc(tWait) > 5, break; end
+            pause(0.001);
+        end
+
+        blk = uipanel('Parent',fig,'Units','normalized', ...
+            'Position',[0 0 1 1], ...
+            'BackgroundColor','black','BorderType','none');
+        uistack(blk, 'top');
+        drawnow;
+        set(fig,'WindowButtonMotionFcn','');
+
+        t0 = tic;
+        while toc(t0) < duration
+            pumpBarrierBytes();
+            pause(0.001);
+        end
+
+        safeWrite(tcpObj,uint8(11),'uint8');
+        barrierLocalDone = true;
+
+        tWait = tic;
+        while ~barrierRemoteDone
+            pumpBarrierBytes();
+            if toc(tWait) > 5, break; end
+            pause(0.001);
+        end
+
+        delete(blk);
+        set(fig,'WindowButtonMotionFcn',@mouseMoved);
+    end
+
+    function startTask()
+        cycleStartTime = tic;
+        targetSequence   = [7 3 1 5];
+        remainingTargets = targetSequence;
+        radii            = 0.25;
+        circleDiameter   = 0.15;
+        circleDiameter2  = 0.08;
+        centerHoldDuration = 0.8;
+        targetHoldDuration = 1;
+        FIRSTMOVE_DELTA  = 0.01;
+        FIRSTMOVE_FRAMES = 5;
+        maxCycles        = 999;
+        cyclesCompleted = 0;
+
+        angles = linspace(0,2*pi,9);
+        angles = angles(1:end-1);
+        targetCenters = zeros(8,2);
+        for i = 1:8
+            targetCenters(i,1) = radii*cos(angles(i));
+            targetCenters(i,2) = radii*sin(angles(i));
+        end
+
+        ttlFirstMove   = NaN;
+        ttlEnd         = NaN;
+        remoteTtlFirst = NaN;
+        remoteTtlEnd   = NaN;
+        ttlStartDiff   = NaN;
+        ttlEndDiff     = NaN;
+        centerActivated   = false;
+        centerEnterTime   = NaN;
+        centerexittime    = NaN;
+        hoverEnterTime    = NaN;
+        firstMove         = true;
+        targetActivated   = false;
+        targetReachedOnce = false;
+        localCenterDone  = false;
+        remoteCenterDone = false;
+        mousePath        = [];
+        remoteCenterIdx = -1;
+        lastCenterSent  = 0;
+        lastMoveTime    = NaN;
+        resetPosition  = [NaN NaN];
+        centerExitPos  = [NaN NaN];
+        failInProgress = false;
+        failStatus     = 2;
+        remoteSuccess  = false;
+        localSuccess   = false;
+        trialIndex = 0;
+        trialMode  = 0;
+
+        touchStable = 0; touchHiCnt = 0; touchLoCnt = 0;
+
+        fig = figure('Color','black','Pointer','custom', ...
+            'Units','normalized','Position',[0 0 1 1], ...
+            'MenuBar','none','ToolBar','none','WindowState','fullscreen', ...
+            'CloseRequestFcn',@(src,event) cleanup());
+
+        ax = axes('Parent',fig,'Color','black', ...
+            'Units','normalized','Position',[0 0 1 1], ...
+            'DataAspectRatio',[1 1 1]);
+        axis off; hold on;
+
+        set(fig,'WindowButtonMotionFcn',@mouseMoved);
+
+        passiveOverlay = uipanel('Parent',fig,'Units','normalized', ...
+            'Position',[0 0 1 1], ...
+            'BackgroundColor','black','BorderType','none','Visible','off');
+
+        timerObj = timer('TimerFcn',@recordMousePos, ...
+            'Period',0.001,'ExecutionMode','fixedRate');
+
+        showBlackPanelScreenSync(20);
+        drawCircles();
+        setInvisibleCursor();
+        resetMouseAndDotPositionToCenter();
+        showTargetCircles(0);
+        cycleStartTime = tic;
+        start(timerObj);
+    end
+
+    function mouseMoved(~,~)
+        if isempty(timerObj) || strcmp(timerObj.Running,'off'), return; end
+        C = get(ax,'CurrentPoint');
+        x = C(1,1);
+        y = C(1,2);
+        x = max(-0.5,min(0.5,x));
+        y = max(-0.5,min(0.5,y));
+        if isvalid(mouseDot)
+            set(mouseDot,'XData',x,'YData',y);
+        end
+    end
+
+    function tStable = debounceTouch(rawLogic)
+        tStable = touchStable;
+        if isnan(rawLogic), return; end
+
+        pressed = (rawLogic == TOUCH_ACTIVE_LEVEL);
+
+        if pressed
+            touchHiCnt = touchHiCnt + 1;
+            touchLoCnt = 0;
+            if touchHiCnt >= TOUCH_FRAMES
+                touchStable = 1;
+            end
+        else
+            touchLoCnt = touchLoCnt + 1;
+            touchHiCnt = 0;
+            if touchLoCnt >= TOUCH_FRAMES
+                touchStable = 0;
+            end
+        end
+        tStable = touchStable;
+    end
+
+    function recordMousePos(~,~)
+        if strcmp(timerObj.Running,'off'), return; end
+
+        x = get(mouseDot,'XData');
+        y = get(mouseDot,'YData');
+        tNow = toc(cycleStartTime);
+        if trialMode == 0
+            checkRemoteSignal();
+            return;
+        end
+
+        rawTouch = NaN;
+        logTouch = NaN;
+
+        if centerActivated && isActiveSide() && inCenter(x,y)
+            scanData = read(daqSession, "OutputFormat", "Matrix");
+            rawTouch = scanData(1);
+            logTouch = rawTouch;
+        end
+
+        touchVal = debounceTouch(rawTouch);
+
+        mousePath = [mousePath; x, y, tNow, logTouch];
+
+        if isPassiveSide()
+            checkContraMove(x,y);
+            checkRemoteSignal();
+            return;
+        end
+
+        checkFirstMove();
+        logic(x, y, touchVal);
+        checkContraMove(x,y);
+        checkTimeout();
+        checkRemoteSignal();
+    end
+
+    function a = isActiveSide()
+        a = (trialMode == 1) || ...
+            (trialMode == 2 && THIS_SIDE == 1) || ...
+            (trialMode == 3 && THIS_SIDE == 2);
+    end
+
+    function p = isPassiveSide()
+        p = (trialMode ~= 1) && ~isActiveSide();
+    end
+
+    function logic(x,y,touchVal)
+        tNow = toc(cycleStartTime);
+        if centerActivated && isActiveSide()
+            if isnan(centerEnterTime)
+                if inCenter(x,y) && (touchVal == 1)
+                    centerEnterTime = tNow;
+                    set(mouseDot, 'Color', 'r');
+                end
+            else
+                if ~inCenter(x,y) || (touchVal == 0)
+                    failStatus = 2;
+                    if isActiveSide()
+                        sendSignal(tcpObj,3);
+                    end
+                    doBothFail();
+                    return;
+
+                elseif tNow >= centerEnterTime + centerHoldDuration
+                    if ~localCenterDone
+                        localCenterDone = true;
+                        payload = [uint8(4); typecast(uint16(trialIndex),'uint8')'];
+                        safeWrite(tcpObj,payload,'uint8');
+                    end
+
+                    if trialMode == 1 && ~remoteCenterDone
+                        return;
+                    end
+
+                    centerActivated = false;
+                    centerexittime  = tNow;
+                    centerEnterTime = NaN;
+                    localCenterDone = true;
+                    centerExitPos   = [get(mouseDot,'XData'), get(mouseDot,'YData')];
+                    set(mouseDot, 'Color', 'r');
+
+                    if isActiveSide()
+                        showTargetCircles(currentTarget);
+                        targetActivated = true;
+                    end
+                end
+            end
+        end
+
+        if ~centerActivated && isActiveSide()
+            if targetActivated && inTarget(x,y,currentTarget)
+                if isnan(hoverEnterTime)
+                    hoverEnterTime    = tNow;
+                    targetReachedOnce = false;
+                elseif ~targetReachedOnce && tNow >= hoverEnterTime + targetHoldDuration
+                    targetReachedOnce = true;
+                    sendTTL(2);
+                    localSuccess = true;
+                    payload = uint8([ ...
+                        2; ...
+                        typecast(uint16(trialIndex),'uint8')'; ...
+                        typecast([ttlFirstMove, ttlEnd],'uint8')' ...
+                    ]);
+                    safeWrite(tcpObj,payload,'uint8');
+
+                    if trialMode == 1
+                        if remoteSuccess
+                            compareTtlAndProceed();
+                        end
+                    else
+                        doBothSuccess();
+                    end
+                end
+            else
+                hoverEnterTime = NaN;
+            end
+        end
+    end
+
+    function checkFirstMove()
+        persistent aboveCount
+        if isempty(aboveCount), aboveCount = 0; end
+        if firstMove && ~centerActivated && targetActivated && isActiveSide()
+            pos = [get(mouseDot,'XData'), get(mouseDot,'YData')];
+            if ~any(isnan(centerExitPos))
+                if norm(pos - centerExitPos) > FIRSTMOVE_DELTA
+                    aboveCount = aboveCount + 1;
+                    if aboveCount >= FIRSTMOVE_FRAMES
+                        lastMoveTime = toc(cycleStartTime);
+                        sendTTL(1);
+                        firstMove = false;
+                        aboveCount = 0;
+                    end
+                else
+                    aboveCount = 0;
+                end
+            end
+        else
+            aboveCount = 0;
+        end
+    end
+
+    function checkContraMove(x,y)
+        persistent contraCount
+        if isempty(contraCount), contraCount = 0; end
+
+        if ~isPassiveSide()
+            contraCount = 0;
+            return;
+        end
+
+        if isnan(resetPosition(1))
+            resetPosition = [x, y];
+            return;
+        end
+
+        d = hypot(x - resetPosition(1), y - resetPosition(2));
+        if d > CONTRA_MOVE_THRESH
+            contraCount = contraCount + 1;
+            if contraCount >= CONTRA_FRAMES_THRESH
+                if failInProgress, return; end
+                failInProgress = true;
+                failStatus = 2;
+                sendSignal(tcpObj,3);
+                doBothFail();
+            end
+        else
+            contraCount = 0;
+        end
+    end
+
+    function checkTimeout()
+        if isActiveSide()
+            if toc(cycleStartTime) > 8
+                handleTimeout();
+            end
+        end
+    end
+
+    function handleTimeout()
+        if failInProgress, return; end
+        failInProgress = true;
+        failStatus = 2;
+        sendSignal(tcpObj,3);
+        doBothFail();
+    end
+
+    function sendTTL(signalType)
+        if isempty(daqSession) || ~isvalid(daqSession), return; end
+        nowRel = toc(cycleStartTime);
+        switch signalType
+            case 1
+                ttlFirstMove = nowRel;
+                write(daqSession,[1 1 0 1 0]); pause(0.01); write(daqSession,[1 1 0 0 0]);
+            case 2
+                ttlEnd = nowRel;
+                write(daqSession,[1 1 0 0 1]); pause(0.01); write(daqSession,[1 1 0 0 0]);
+            case 4
+                write(daqSession,[0 1 1 0 0]); pause(0.01); write(daqSession,[1 1 0 0 0]);
+        end
+    end
+
+    function checkRemoteSignal()
+        n = tcpObj.NumBytesAvailable;
+        if n > 0
+            rxbuf = [rxbuf; read(tcpObj,n,'uint8')];
+        end
+
+        while true
+            if numel(rxbuf) < 1, break; end
+            op = rxbuf(1);
+            need = payloadLen(op);
+            if numel(rxbuf) < 1+need, break; end
+
+            payload = rxbuf(2:1+need);
+            rxbuf   = rxbuf(2+need:end);
+
+            switch op
+                case 2
+                    rTrial = double(typecast(uint8(payload(1:2)),'uint16'));
+                    if rTrial ~= trialIndex, continue; end
+                    times = typecast(uint8(payload(3:end)),'double');
+                    remoteTtlFirst = times(1);
+                    remoteTtlEnd   = times(2);
+                    remoteSuccess  = true;
+                    if trialMode == 1
+                        if localSuccess, compareTtlAndProceed(); end
+                    else
+                        doBothSuccess();
+                    end
+
+                case 3
+                    remoteSuccess = false;
+                    if ~failInProgress
+                        failInProgress = true;
+                        doBothFail();
+                    end
+
+                case 4
+                    % ===== 补丁2：op=4 做 trialIndex 校验，避免延迟包影响新trial =====
+                    rTrial = double(typecast(uint8(payload(1:2)),'uint16'));
+                    if rTrial ~= trialIndex
+                        continue;
+                    end
+                    safeWrite(tcpObj,[uint8(5); typecast(uint16(rTrial),'uint8')'],'uint8');
+                    remoteCenterDone = true;
+                    remoteCenterIdx  = max(remoteCenterIdx,rTrial);
+
+                case 7
+                    if isActiveSide()
+                        showTargetCircles(currentTarget);
+                        targetActivated = true;
+                    end
+
+                case 5
+                case 6
+                    rTrial = double(typecast(uint8(payload(1:2)),'uint16'));
+                    trialIndex = rTrial;
+                    m    = double(payload(3));
+                    side = double(payload(4));
+                    dir  = double(payload(5));
+                    applyTrialMeta(m, side, dir);
+
+                case 10
+                    barrierRemoteReady = true;
+                case 11
+                    barrierRemoteDone  = true;
+                otherwise
+            end
+        end
+
+        function Lp = payloadLen(op_)
+            switch op_
+                case 2,  Lp = 18;
+                case 3,  Lp = 0;
+                case 4,  Lp = 2;
+                case 5,  Lp = 2;
+                case 6,  Lp = 5;
+                case 7,  Lp = 0;
+                case 99, Lp = 0;
+                case 10, Lp = 0;
+                case 11, Lp = 0;
+                otherwise, Lp = 0;
+            end
+        end
+    end
+
+    function compareTtlAndProceed()
+        threshold = 0.5;
+        if any(isnan([ttlFirstMove,ttlEnd,remoteTtlFirst,remoteTtlEnd]))
+            failStatus = 2;
+            doBothFail();
+            return;
+        end
+
+        ttlStartDiff = abs(ttlFirstMove - remoteTtlFirst);
+        ttlEndDiff   = abs(ttlEnd       - remoteTtlEnd);
+
+        if ttlStartDiff <= threshold && ttlEndDiff <= threshold
+            doBothSuccess();
+        else
+            failStatus = 2;
+            doBothFail();
+        end
+    end
+
+    function doBothSuccess()
+        if ~isempty(remainingTargets), remainingTargets(1) = []; end
+        sendTTL(4);
+        stop(timerObj);
+        totalTime = getTotalTime();
+        cyclesCompleted = cyclesCompleted + 1;
+        saveMousePathAndTrueCoordinates(mousePath,cyclesCompleted,totalTime,1);
+        successCount = successCount + 1;
+        showBlackPanelScreenSync(3);
+        resetTarget();
+    end
+
+    function doBothFail()
+        stop(timerObj);
+        totalTime = getTotalTime();
+        cyclesCompleted = cyclesCompleted + 1;
+        saveMousePathAndTrueCoordinates(mousePath,cyclesCompleted,totalTime,failStatus);
+        showBlackPanelScreenSync(3);
+        resetTarget();
+    end
+
+    function resetTarget()
+        mousePath        = [];
+        ttlFirstMove     = NaN;
+        ttlEnd           = NaN;
+        remoteTtlFirst   = NaN;
+        remoteTtlEnd     = NaN;
+        ttlStartDiff     = NaN;
+        ttlEndDiff       = NaN;
+        lastMoveTime     = NaN;
+        centerEnterTime  = NaN;
+        hoverEnterTime   = NaN;
+        centerexittime   = NaN;
+        centerExitPos    = [NaN NaN];
+        centerActivated  = false;
+        targetActivated  = false;
+        firstMove        = true;
+        localCenterDone  = false;
+        remoteCenterDone = false;
+        targetReachedOnce = false;
+        failInProgress   = false;
+        failStatus       = 2;
+        localSuccess     = false;
+        remoteSuccess    = false;
+        remoteCenterIdx  = -1;
+        lastCenterSent   = 0;
+        resetPosition    = [NaN NaN];
+        trialMode = 0;
+        touchStable = 0; touchHiCnt = 0; touchLoCnt = 0;
+        while tcpObj.NumBytesAvailable > 0
+            read(tcpObj,tcpObj.NumBytesAvailable,'uint8');
+        end
+        rxbuf = uint8([]);
+        safeWrite(tcpObj, uint8(99), 'uint8');
+        resetMouseAndDotPositionToCenter();
+        showTargetCircles(0);
+        cycleStartTime = tic;
+        start(timerObj);
+    end
+
+    function totalTime = getTotalTime()
+        if ~isempty(mousePath) && size(mousePath,2) >= 3
+            totalTime = mousePath(end,3);
+        else
+            totalTime = toc(cycleStartTime);
+        end
+    end
+
+    function drawCircles()
+        angles = linspace(0,2*pi,9);
+        angles = angles(1:end-1);
+        for i = 1:8
+            x = radii*cos(angles(i));
+            y = radii*sin(angles(i));
+            rectangle('Position',[x-circleDiameter/2, ...
+                                  y-circleDiameter/2, ...
+                                  circleDiameter, circleDiameter], ...
+                      'Curvature',[1,1], ...
+                      'EdgeColor','w','FaceColor','k', ...
+                      'LineWidth',3, ...
+                      'UserData',i, ...
+                      'Visible','off');
+        end
+
+        rectangle('Position',[-circleDiameter2/2, -circleDiameter2/2, ...
+                               circleDiameter2, circleDiameter2], ...
+                  'Curvature',[1,1], ...
+                  'EdgeColor','y','FaceColor','y', ...
+                  'LineWidth',3, ...
+                  'Visible','on');
+
+        xlim([-0.5,0.5]);
+        ylim([-0.5,0.5]);
+    end
+
+    function setInvisibleCursor()
+        transparentCursor = NaN(16,16);
+        hotspot = [8,8];
+        set(fig,'Pointer','custom', ...
+            'PointerShapeCData',transparentCursor, ...
+            'PointerShapeHotSpot',hotspot);
+    end
+
+    function setPassiveOverlay(vis)
+        if vis
+            set(passiveOverlay,'Visible','on');
+        else
+            set(passiveOverlay,'Visible','off');
+        end
+    end
+
+    function applyTrialMeta(m, side, dir)
+        trialMode     = m;
+        currentTarget = dir;
+        if trialMode == 2
+            setPassiveOverlay(false);
+        elseif trialMode == 3
+            setPassiveOverlay(true);
+        else
+            setPassiveOverlay(false);
+        end
+
+        showTargetCircles(0);
+        targetActivated   = false;
+        firstMove         = true;
+        targetReachedOnce = false;
+        hoverEnterTime    = NaN;
+        localSuccess      = false;
+        remoteSuccess     = false;
+        centerActivated   = isActiveSide();
+        centerEnterTime   = NaN;
+        centerexittime    = NaN;
+
+        touchStable = 0; touchHiCnt = 0; touchLoCnt = 0;
+    end
+
+    function resetMouseAndDotPositionToCenter()
+        if isempty(mouseDot) || ~isvalid(mouseDot)
+            mouseDot = plot(0,0,'r.','MarkerSize',100);
+        end
+        figPos = get(fig,'Position');
+        pixPos = getpixelposition(ax,true);
+        axCenterX = figPos(1)*screenSize(3) + pixPos(1) + pixPos(3)/2;
+        axCenterY = screenSize(4) - (figPos(2)*screenSize(4) + pixPos(2) + pixPos(4)/2);
+        robot = java.awt.Robot;
+        robot.mouseMove(round(axCenterX),round(axCenterY));
+        mousePath     = [];
+        resetPosition = [NaN NaN];
+        set(mouseDot,'XData',0,'YData',0);
+    end
+
+    function showTargetCircles(targetNum)
+        objs = findall(ax,'Type','rectangle');
+        objs = objs(:);
+        if isempty(objs), return; end
+
+        fc = get(objs,'FaceColor');
+        if ~iscell(fc), fc = {fc}; end
+
+        isCenter = cellfun(@(c) isequal(c,[1 1 0]),fc);
+        centerObj  = objs(isCenter);
+        circleObjs = objs(~isCenter);
+
+        if targetNum == 0
+            if ~isempty(centerObj)
+                if isActiveSide()
+                    set(centerObj,'Visible','on');
+                else
+                    set(centerObj,'Visible','off');
+                end
+            end
+            if ~isempty(circleObjs)
+                set(circleObjs,'Visible','off');
+            end
+            return;
+        end
+
+        if ~isempty(centerObj)
+            set(centerObj,'Visible','off');
+        end
+
+        for i = 1:numel(circleObjs)
+            idx = get(circleObjs(i),'UserData');
+            if isempty(idx) || ~isscalar(idx), continue; end
+            if idx == targetNum
+                set(circleObjs(i),'Visible','on', ...
+                    'FaceColor','w','EdgeColor','w','LineWidth',3);
+            else
+                set(circleObjs(i),'Visible','off');
+            end
+        end
+    end
+
+    function tf = inCenter(x,y)
+        tf = hypot(x,y) < 0.5*circleDiameter2;
+    end
+
+    function tf = inTarget(x,y,targetNum)
+        if targetNum == 0
+            tf = false;
+            return;
+        end
+        c = targetCenters(targetNum,:);
+        tf = hypot(x-c(1),y-c(2)) < 0.5*circleDiameter;
+    end
+
+    function recordData = saveMousePathAndTrueCoordinates(pathData,trialID,totalTime,status)
+        if isempty(pathData)
+            recordData = [];
+            return;
+        end
+
+        if isempty(currentTarget) || isnan(currentTarget)
+            targetDir = -1;
+        else
+            targetDir = currentTarget;
+        end
+
+        folderName = fullfile(pwd,'L');
+        if ~exist(folderName,'dir')
+            mkdir(folderName);
+        end
+
+        traceFile = fullfile(folderName,['left' num2str(trialID) '.xlsx']);
+        writematrix(pathData,traceFile);
+
+        trialData = [ ...
+            trialID, targetDir, totalTime, lastMoveTime, status, ...
+            ttlFirstMove, ttlEnd, ttlStartDiff, ttlEndDiff, ...
+            centerexittime, trialMode ...
+        ];
+
+        summaryFile = fullfile(folderName,'Summary_L.xlsx');
+        if ~isfile(summaryFile)
+            header = {'Trial','Target','Dur','FirstMoveTime', ...
+                      'Status(1=succ,2=fail)', ...
+                      'TTL_FirstMove','TTL_End','TTL_StartDiff','TTL_EndDiff', ...
+                      'CenterExitTime','Mode(1=BI,2=L,3=R)'};
+            writecell(header,summaryFile);
+        end
+
+        writematrix(trialData,summaryFile,'WriteMode','append');
+        recordData = trialData;
+    end
+end
