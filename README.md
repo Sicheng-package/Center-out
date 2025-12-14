@@ -140,13 +140,13 @@ A small patch has been added in the updated `L2.m` and `R2.m` scripts:
 
 -----
 
-## Patch: L3 / R3 (Touch Detection & Interactive Mode)
+## Patch: L4 / R4 (Touch Detection & Interactive Mode)
 
-The `L3.m` and `R3.m` scripts introduce significant hardware integration and usability improvements:
+The `L4.m` and `R4.m` scripts introduce significant hardware integration and usability improvements:
 
 1.  **Interactive Mode Selection (Server-Side)**
 
-      - Upon running `R3`, a GUI dialog box now appears requesting the operator to select the session mode:
+      - Upon running `R4`, a GUI dialog box now appears requesting the operator to select the session mode:
           - *Mix (Bi/L/R)*
           - *Bi-Manual Only*
           - *Uni-Left Only*
