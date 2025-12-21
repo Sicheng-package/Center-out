@@ -1,169 +1,94 @@
-# Introduction
+This is a comprehensive and professional README designed to showcase your motor control framework. It integrates your technical requirements with the recent logic updates (Patches L2–L4) to provide a clear, high-level overview for researchers.
 
-This repository provides MATLAB-based code for a **center-out reaching task** that integrates both **unimanual (single-hand)** and **bimanual (two-hand)** paradigms into a **single unified framework**.
+---
 
-  - The **right-side computer** runs `R.m` (or `R3.m`), which acts as **TCP server + trial scheduler**, dynamically interleaving:
-      - Bimanual trials (BI)
-      - Left-only unimanual trials (UNI-L)
-      - Right-only unimanual trials (UNI-R)
-  - The **left-side computer** runs `L.m` (or `L3.m`) as a **TCP client**, sharing the same state machine, timing rules, and trial structure.
+# Motor Control Reach-to-Touch Framework (MATLAB)
 
-The task was designed for rhesus monkeys, initially using a mouse-controlled on-screen cursor (which can be replaced with USB joysticks in future versions) to perform center-out reaches toward 8 peripheral targets. The framework is suitable for electrophysiology experiments (e.g., Neuropixels), where precise timing and dual-hemisphere control are required.
+This repository provides a unified MATLAB-based framework for **center-out reaching tasks**. It is designed for behavioral neuroscience and electrophysiology (e.g., Neuropixels), supporting interleaved **Unimanual (L/R)** and **Bimanual** paradigms with millisecond-precision timing.
 
------
+## System Architecture
 
-## Requirements
+The framework operates on a **Server-Client** model via TCP/IP to ensure perfect synchronization between two separate computers controlling the left and right workspaces.
 
-1.  **Input device**
-      - Currently: standard mouse (cursor controlled via OS)
-      - Optionally: USB-based joysticks (after mapping deflection to cursor position/velocity)
-2.  **Two computers with MATLAB**
-      - Tested version: MATLAB R2022a or later
-      - Required toolboxes:
-          - Data Acquisition Toolbox
-          - Instrument Control Toolbox
-3.  **NI DAQ hardware**
-      - Example: NI USB-6009 or similar
-      - Left computer: device name `Dev3`
-      - Right computer: device name `Dev4`
-      - Used for TTL signal output and alignment with neural recordings
-      - **(New for L3/R3)**: Requires Digital Input on `Port1/Line3` for touch sensors.
-4.  **Network connection**
-      - Ethernet cable or LAN connection for TCP communication
-      - Default server IP in `L.m`: `192.168.0.10`
-      - Default TCP port in `R.m`: `30000`
+| Component | Role | Logic Script | Primary Responsibility |
+| --- | --- | --- | --- |
+| **Right Computer** | **Server** | `R4_touch.m` | Trial scheduler, TCP server, mode selection GUI. |
+| **Left Computer** | **Client** | `L4_touch.m` | TCP client, follows server state machine. |
 
------
+---
 
-## To run this code
+## Key Features
 
-1.  **On the right-side computer (server / scheduler)**
+* **Integrated Trial Interleaving**: Dynamically switch between Bimanual (BI), Left-only (UNI-L), and Right-only (UNI-R) trials within a single session.
+* **Capacitive Touch Integration**: Supports hardware-level "Strict Holding" via NI-DAQ digital input. Trials require both cursor positioning and physical contact (handle grip).
+* **Sophisticated Hold Logic**:
+* **Active Hand**: Must maintain center/target hold for a set duration.
+* **Inactive Hand (UNI trials)**: Refined "No-Move" rule—the inactive limb must remain relatively still below a threshold, or the trial fails.
 
-      - Open MATLAB
-      - Make sure the NI device (e.g., `Dev4`) is available
-      - Run:
-        ```matlab
-        R   % (Or R2, R3 depending on version)
-        ```
 
-2.  **On the left-side computer (client)**
+* **High-Frequency Data Logging**: Records  coordinates, time (), and touch status at high sampling rates to `.xlsx` trace files.
+* **Automated Cursor Reset**: Uses the Java `Robot` class to ensure the starting position is identical for every trial.
 
-      - Open MATLAB
-      - Edit `L.m` if necessary to set the correct `serverIP`
-      - Make sure the NI device (e.g., `Dev3`) is available
-      - Run:
-        ```matlab
-        L   % (Or L2, L3 depending on version)
-        ```
+---
 
-3.  **Synchronization & task start**
+## Hardware & Requirements
 
-      - Both sides first enter a **black-screen synchronization phase** (e.g., 10 s) using a simple TCP barrier.
-      - After barrier synchronization, both screens display:
-          - A yellow center target
-          - 8 peripheral targets arranged on a circle
-      - The right-side computer schedules bimanual / unimanual trials in a shuffled order and broadcasts trial metadata (mode + active side + direction) via TCP.
+### 1. Requirements
 
------
+* **MATLAB**: R2022a or later.
+* **Toolboxes**: Data Acquisition Toolbox, Instrument Control Toolbox.
+* **NI-DAQ Hardware**: (e.g., USB-6009).
+* **Input**: Port1/Line3 for Touch Sensors.
+* **Output**: Digital lines for TTL alignment with neural recording systems.
 
-## Parameters
 
-Key behavioral parameters (defined in scripts):
 
-  - `centerHoldDuration`
-    Required center-hold duration (seconds) before the trial “leaves center” and a direction is assigned.
+### 2. Networking
 
-  - `targetHoldDuration`
-    Required hold time inside the target (seconds) for a trial to be counted as successful.
+* **Connection**: Standard LAN/Ethernet.
+* **Default Configuration**:
+* Server IP: `192.168.0.10`
+* TCP Port: `30000`
 
-  - `FIRSTMOVE_DELTA`
-    Movement onset threshold (distance from center in normalized screen coordinates). When the cursor moves farther than this distance for a sufficient number of frames, the **first-move** is detected and a TTL is sent.
 
-  - `FIRSTMOVE_FRAMES`
-    Number of consecutive frames that the movement must exceed `FIRSTMOVE_DELTA` to be considered a valid first-move.
 
-  - `timeout`
-    Maximum trial duration after leaving the center (currently hard-coded as 8 seconds). If the subject fails to reach and hold the target within this time, the trial is marked as a failure.
+---
 
-  - `circleDiameter` / `circleDiameter2` and `radii`
+## 🕹 Experimental Flow
 
-      - `circleDiameter2`: size of the center target
-      - `circleDiameter`: size of the peripheral targets
-      - `radii`: distance of peripheral targets from the center
+1. **Initialization**: The operator selects the session mode (*Mix, BI-only, UNI-L, or UNI-R*) via a GUI on the Server.
+2. **Barrier Sync**: Both computers enter a 10s black-screen sync phase to align clocks and hardware.
+3. **Center Hold**:
+* Yellow center appears.
+* Subject must move the cursor into the center **AND** trigger the touch sensor.
+* Condition must be held for `centerHoldDuration` (default 1.0s).
 
-  - `trialMode` (internal)
 
-      - `1`: bimanual (BI)
-      - `2`: unimanual left (UNI-L)
-      - `3`: unimanual right (UNI-R)
+4. **Target Reach**:
+* One of 8 peripheral targets appears.
+* Subject must reach and hold the target for `targetHoldDuration`.
 
-The right-side script (`R.m`) maintains three separate direction queues (`remainingBI`, `remainingUniL`, `remainingUniR`) and shuffles a base pattern of modes (`bi`, `uniL`, `uniR`) to provide **integrated, interleaved** single-hand + bimanual blocks within one continuous session.
 
------
+5. **Success/Fail**: TTL signals are sent to the neural recording system for "First Move," "Success," and "Trial Start."
 
-## Outputs
+---
 
-Both `L.m` and `R.m` save:
+## Data Outputs
 
-### 1\. Cursor trajectories (per-trial traces)
+Data is automatically organized into folders (e.g., `/S1_L` and `/S1_R`):
 
-  - Left side:
-      - Folder: `L/`
-      - Files: `left<N>.xlsx`
-  - Right side:
-      - Folder: `R/`
-      - Files: `right<N>.xlsx`
+* **Trajectory Files**: `left<N>.xlsx` / `right<N>.xlsx` containing .
+* **Summary Data**: A master spreadsheet recording Trial ID, Target Direction, Duration, First Movement Time, and Sync Differences (for bimanual tasks).
 
-Each file contains a matrix with columns:
+---
 
-```text
-[x, y, t]  % (L3/R3 adds a 4th column: touchStatus)
-```
+## Setup Notes
 
------
+* **Device Mapping**: Ensure NI-DAQ devices are named `Dev3` (Left) and `Dev4` (Right) in NI-MAX.
+* **Touch Sensing**: Touch detection is optimized to be active primarily during the hold phases to maximize performance during the movement phase.
 
-## Patch: L2 / R2 (Updated Unimanual Logic)
+---
 
-A small patch has been added in the updated `L2.m` and `R2.m` scripts:
-
-1.  **New helper function(s) for the holding stage**
-    The holding-stage logic has been refactored into dedicated helper function(s) to make the code easier to read and to keep the state machine for center/target hold checks in one place.
-
-2.  **Unimanual holding rule updated**
-
-      - In **unimanual trials (UNI-L / UNI-R)**, **only the active hand** is required to acquire and hold the center / target for the specified `centerHoldDuration` and `targetHoldDuration`.
-      - The **inactive hand** is no longer required to perform a full hold in the center/target. Instead, it must simply remain **relatively still**:
-          - Its cursor displacement must stay **below a “no-move” / holding threshold**.
-          - If the inactive hand shows a clear movement exceeding this threshold, the trial is treated as a **failure** (just like a break of hold in the active hand).
-
-    This update makes unimanual tasks less constrained for the non-moving hand while still enforcing that the “inactive” limb does not make large movements during the hold period.
-
------
-
-## Patch: L4 / R4 (Touch Detection & Interactive Mode)
-
-The `L4.m` and `R4.m` scripts introduce significant hardware integration and usability improvements:
-
-1.  **Interactive Mode Selection (Server-Side)**
-
-      - Upon running `R4`, a GUI dialog box now appears requesting the operator to select the session mode:
-          - *Mix (Bi/L/R)*
-          - *Bi-Manual Only*
-          - *Uni-Left Only*
-          - *Uni-Right Only*
-      - This allows for targeted training sessions (e.g., forcing only left-hand trials) without modifying the code.
-
-2.  **Capacitive Touch Integration (Strict Holding)**
-
-      - **Hardware Requirement:** A digital input signal (TTL) from a touch sensor is required on `Port1/Line3` of the NI DAQ.
-      - **Strict Hold Logic:** A valid "Center Hold" now requires **simultaneous** satisfaction of two conditions:
-        1.  Cursor is strictly inside the center circle.
-        2.  Touch sensor reads `1` (Hand is physically gripping the handle).
-      - **Failure Mode:** If the subject releases the handle (Signal `0`) or exits the circle at any point during the hold duration, the trial is **immediately** marked as `Fail` and the task resets.
-  
+**Would you like me to add a "Troubleshooting" section specifically for TCP connection errors or NI-DAQ configuration?**
 <img width="1280" height="1707" alt="image" src="https://github.com/user-attachments/assets/9bae189c-22a3-4265-90cf-44513f531910" />
 
-3.  **Performance Optimization**
-
-      - **Decimated Sampling:** To prevent cursor lag/stuttering during high-frequency loops, DAQ reading is performed at a decimated rate (e.g., every 15ms) rather than every frame.
-      - **Phase-Dependent Sensing:** Touch detection is active *only* during the Center Hold phase to maximize performance during the reaching phase.
