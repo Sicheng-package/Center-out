@@ -1,111 +1,110 @@
-Introduction
-This repository provides MATLAB-based code for a center-out reaching task that integrates both unimanual (single-hand) and bimanual (two-hand) paradigms.
+## Introduction
 
-The right-side computer runs bimanual_R_touch.m (Server) or unimanual_R_touch.m (Independent).
+This repository provides MATLAB-based code for a **center-out reaching task** that integrates both **unimanual (single-hand)** and **bimanual (two-hand)** paradigms into a synchronized experimental framework.
 
-The left-side computer runs bimanual_L_touch.m (Client) or unimanual_L_touch.m (Independent).
+* The **right-side computer** runs `bimanual_R_touch.m` as the **TCP server** or `unimanual_R_touch.m` for independent tasks.
+* The **left-side computer** runs `bimanual_L_touch.m` as a **TCP client** or `unimanual_L_touch.m` for independent tasks.
+* The system is designed for high-precision motor control studies, utilizing a state machine that handles center-holding, target-reaching, and real-time touch sensor validation.
 
-The bimanual scripts utilize a TCP server/client architecture to synchronize trial starts and compare performance timestamps (TTLs) between hands.
+---
 
-The framework is designed for high-precision motor control experiments requiring integration with NI-DAQ hardware for capacitive touch sensing and neural recording alignment.
+## Requirements
 
-Requirements
-Input Device
+1. **Input Device**
+* Standard mouse (cursor position is mapped to the task workspace).
+* Automated cursor reset to the center is handled via the Java `Robot` class.
 
-Standard mouse or cursor-controlled device.
 
-The system uses Java Robot to automatically reset the mouse position to the center of the screen at the start of each trial.
+2. **Two Computers with MATLAB**
+* Required for bimanual synchronization via TCP/IP communication.
+* The framework uses the `Instrument Control Toolbox` for TCP connectivity.
 
-Two Computers with MATLAB
 
-Required for bimanual synchronization via TCP/IP.
+3. **NI DAQ Hardware**
+* **Left computer**: NI device name must be configured as `Dev3`.
+* **Right computer**: NI device name must be configured as `Dev4`.
+* **Digital Input**: Requires a touch sensor signal on `port1/line3`.
+* **Digital Output**: Sends TTL pulses on `port0/line0:4` for neural alignment.
 
-Default server IP for the left client is 192.168.0.10.
 
-Default TCP port is 30000.
+4. **Network Connection**
+* Default server IP in `bimanual_L_touch.m`: `192.168.0.10`.
+* Default TCP port: `30000`.
 
-NI DAQ Hardware
 
-Left computer: device name Dev3.
 
-Right computer: device name Dev4.
+---
 
-Digital Input: Requires a touch sensor signal on port1/line3.
+## To run this code
 
-Digital Output: Sends TTL pulses on port0/line0:4 for movement onset, target acquisition, and trial synchronization.
+1. **On the right-side computer (Server / Scheduler)**
+* Open MATLAB and ensure the NI device (`Dev4`) is connected.
+* Run the desired script: `bimanual_R_touch()` or `unimanual_R_touch()`.
 
-To run this code
-On the right-side computer (Server for Bimanual)
 
-Run bimanual_R_touch(goalSuccesses) or unimanual_R_touch(goalSuccesses).
+2. **On the left-side computer (Client)**
+* Ensure the NI device (`Dev3`) is connected and the IP address matches the server.
+* Run the desired script: `bimanual_L_touch()` or `unimanual_L_touch()`.
 
-The bimanual script will wait for a TCP connection from the client.
 
-On the left-side computer (Client for Bimanual)
+3. **Synchronization & Task Start**
+* Both systems enter a **black-screen synchronization phase** (10 seconds) using a TCP barrier to ensure both sides are ready.
+* The task automatically initializes the workspace with a yellow center target and peripheral targets after the synchronization period.
 
-Run bimanual_L_touch(goalSuccesses) or unimanual_L_touch(goalSuccesses).
 
-The bimanual client will attempt to connect to the server IP.
 
-Synchronization & Task Start
+---
 
-Both sides enter a black-screen synchronization phase (e.g., 10 seconds).
+## Parameters
 
-In bimanual mode, a TCP barrier ensures both computers are "READY" before the black screen ends and "DONE" before the task begins.
+Key behavioral and timing parameters (hard-coded in scripts):
 
-The task starts with a yellow center target and 8 possible peripheral targets arranged in a circle.
+* `centerHoldDuration`: Subject must maintain position and touch in the center for **1.0 second**.
+* `targetHoldDuration`: Subject must maintain position and touch in the target for **1.0 second**.
+* `firstMovementThreshold`: Displacement of **0.05 units** required to trigger the "First Move" TTL.
+* `timeout`: Maximum trial duration is set to **8 seconds**.
+* `circleDiameter2`: Size of the center target (**0.1**).
+* `circleDiameter`: Size of peripheral targets (**0.1** for unimanual, **0.15** for bimanual).
+* `radii`: Distance of peripheral targets from the center (**0.25**).
+* `TOUCH_FRAMES`: Number of consecutive samples (**5**) required for a stable touch state.
 
-Parameters
-Key behavioral parameters defined in the scripts:
+---
 
-centerHoldDuration: Required time (1.0s) the subject must touch and hold the center target.
+## Outputs
 
-targetHoldDuration: Required time (1.0s) the subject must touch and hold the peripheral target.
+Both systems save two types of experimental data:
 
-firstMovementThreshold: Movement onset threshold (0.05 units). When the cursor moves beyond this distance, a "First Move" TTL is triggered.
+### 1. Cursor Trajectories
 
-TOUCH_FRAMES: Number of consecutive frames (5) the touch signal must be stable to be registered.
+* **Left side**: Saved in folder `S1L` (Unimanual) or `S1_L` (Bimanual) as `left<Trial#>.xlsx`.
+* **Right side**: Saved in folder `S1R` (Unimanual) or `S1_R` (Bimanual) as `right<Trial#>.xlsx`.
+* File structure: `[X-coordinate, Y-coordinate, Timestamp]`.
 
-timeout: Maximum trial duration (8 seconds) to reach the target after leaving the center.
+### 2. Summary Data
 
-circleDiameter / circleDiameter2: Size of peripheral (0.1–0.15) and center (0.1) targets.
+* **Unimanual**: `Summary_Data.xlsx`.
+* **Bimanual**: `Summary_Data_L1.xlsx` and `Summary_Data_R1.xlsx`.
+* Columns include: `Trial`, `Target`, `Dur`, `FirstMoveTime`, `Status`, `TTL_FirstMove`, `TTL_End`, and `CenterHoldStartTime`.
 
-radii: Distance of peripheral targets from the center (0.25).
+---
 
-Outputs
-All scripts save data into specific folders:
+## Patch: Touch Detection & Synchronized Holding
 
-1. Cursor Trajectories
-Left side: Folder S1L (Unimanual) or S1_L (Bimanual); files named left<N>.xlsx.
+This update focuses on integrating physical feedback into the motion state machine:
 
-Right side: Folder S1R (Unimanual) or S1_R (Bimanual); files named right<N>.xlsx.
+1. **Capacitive Touch Integration**
+* The task requires **simultaneous** presence inside the target and a valid digital high signal from the touch sensor.
+* If the touch signal is lost at any point during the hold period, the trial is immediately terminated as a failure.
 
-Trajectory data columns: [x, y, t].
 
-2. Summary Statistics
-Files: Summary_Data.xlsx (Unimanual) or Summary_Data_R1.xlsx / Summary_Data_L1.xlsx (Bimanual).
+2. **Bimanual Temporal Constraints**
+* In bimanual mode, the system compares the timing between the left and right hands.
+* The trial is only successful if the temporal difference for both the movement onset (`ttlStartDiff`) and target acquisition (`ttlEndDiff`) is within a **0.5-second threshold**.
 
-Data includes: Trial number, Target ID, Duration, First Move Time, Success/Fail Status, and TTL timestamps.
 
-Bimanual summaries also include TTL_StartDiff and TTL_EndDiff to measure synchronization between hands.
+3. **Signal Debouncing**
+* A `debounceTouch` function is implemented to filter electrical noise from the touch sensors, requiring the signal to be stable for 5 consecutive frames before updating the logic state.
 
-Patch: Touch Detection & Synchronized Holding
-This version of the code implements advanced Capacitive Touch Integration:
 
-Strict Hold Logic
-
-A valid hold requires the cursor to be inside the target AND the touch sensor (DAQ port1/line3) to be active.
-
-If the touch is lost (Signal 0) or the cursor leaves the area during the hold duration, the trial is immediately failed.
-
-Debounced Sensing
-
-The debounceTouch function prevents accidental failures due to momentary signal noise by requiring 5 consecutive frames of the same touch state.
-
-Bimanual Temporal Alignment
-
-For bimanual success, the difference between left and right "First Move" (TTL1) and "Target Reach" (TTL2) must be within a threshold (0.5s).
-
-If the hands are out of sync, the trial is recorded as a failure.
 <img width="1280" height="1707" alt="image" src="https://github.com/user-attachments/assets/9bae189c-22a3-4265-90cf-44513f531910" />
 
