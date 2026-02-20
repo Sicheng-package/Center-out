@@ -51,23 +51,6 @@ This repository provides MATLAB-based code for a **center-out reaching task** th
 * Both systems enter a **black-screen synchronization phase** (10 seconds) using a TCP barrier to ensure both sides are ready.
 * The task automatically initializes the workspace with a yellow center target and peripheral targets after the synchronization period.
 
-
-
----
-
-## Parameters
-
-Key behavioral and timing parameters (hard-coded in scripts):
-
-* `centerHoldDuration`: Subject must maintain position and touch in the center for **1.0 second**.
-* `targetHoldDuration`: Subject must maintain position and touch in the target for **1.0 second**.
-* `firstMovementThreshold`: Displacement of **0.05 units** required to trigger the "First Move" TTL.
-* `timeout`: Maximum trial duration is set to **8 seconds**.
-* `circleDiameter2`: Size of the center target (**0.1**).
-* `circleDiameter`: Size of peripheral targets (**0.1** for unimanual, **0.15** for bimanual).
-* `radii`: Distance of peripheral targets from the center (**0.25**).
-* `TOUCH_FRAMES`: Number of consecutive samples (**5**) required for a stable touch state.
-
 ---
 
 ## Outputs
